@@ -212,13 +212,13 @@ Tauri 不提供交叉编译。
 
 #### 拿全平台安装包：交给 CI
 
-因为上一条限制，想一次性拿到 Windows + macOS + Linux 三套安装包，
-最省事的办法是让 [.github/workflows/release.yml](.github/workflows/release.yml)
-在 GitHub 提供的三种 runner 上分别构建：
+因为上一条限制，想一次性拿到全部五个平台的安装包，最省事的办法是让
+[.github/workflows/release.yml](.github/workflows/release.yml) 在 GitHub
+提供的四种 runner 上分别构建：
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0     # 推送 tag 即触发，产物进草稿 Release
+git tag v0.1.1
+git push origin v0.1.1     # 推送 tag 即触发，产物进草稿 Release
 ```
 
 也可以在 Actions 页面手动触发（Run workflow）。产物：
@@ -230,22 +230,51 @@ git push origin v0.1.0     # 推送 tag 即触发，产物进草稿 Release
 | macOS | `*.dmg` | 通用二进制，Apple Silicon 与 Intel 通用 |
 | Linux | `*.AppImage` | 免安装，`chmod +x` 后直接运行 |
 | Linux | `*.deb` | Debian / Ubuntu 系 |
+| Android | `app-debug.apk` | debug 签名，可直接侧载 |
+| iOS | `TimeCalc-unsigned.ipa` | **未签名**，需自己重签后才能装，见下 |
 
 工作流默认产出**草稿** Release，确认无误后手动 Publish 才公开。
+移动端产物先作为 workflow artifact 由各自的 job 上传，最后统一由一个
+`attach-mobile` job 用 `gh release upload` 挂到 Release 上——**不各传各的**，
+否则移动端 job 和桌面端的 `tauri-action` 会并行抢着创建同一个 Release，
+正文由先跑完的那个决定。
+
 首次构建约 10–20 分钟（要编译全部 Rust 依赖），之后有 Rust 缓存会快很多。
 
 未配置代码签名，所以 macOS 首次打开需要右键「打开」，Windows 可能弹
-SmartScreen 提示。要消除这些提示需自备证书，`release.yml` 末尾列了所需的环境变量。
+SmartScreen 提示，Android 装的是 debug 签名包。要消除这些提示需自备证书，
+`release.yml` 末尾列了所需的环境变量。
+
+#### iOS 的 ipa 为什么不能直接装
+
+能装到真机上的 `.ipa` **必须签名**，而签名要 Apple 开发者账号（$99/年）。
+没有账号时 CI 只能产出**未签名**的 ipa，拿到后有两条路：
+
+1. **自己重签侧载**：用 [AltStore](https://altstore.io/) 或
+   [Sideloadly](https://sideloadly.io/)，拿你自己的 Apple ID 重签后装到设备上。
+   免费 Apple ID 签的包 **7 天过期**，到期需重签——这是 Apple 的限制，不是构建的问题。
+2. **走正式签名**：有账号后在 `release.yml` 的 `ios` job 里补上证书与描述文件的
+   secrets，把 `CODE_SIGNING_ALLOWED=NO` 那条去掉即可产出可直接安装的 ipa。
 
 ### 移动端（Capacitor 7）
 
-前置：Android Studio（含 SDK）+ JDK 17；iOS 需要 macOS + Xcode 15+。
+前置：
+
+- **Android**：JDK 17+（本机用 21，与 Gradle 8.11 是一等组合）+ Android SDK，
+  需要 `platform-tools`、`platforms;android-35`、`build-tools;35.0.0`
+  （版本要和 [android/variables.gradle](android/variables.gradle) 里的 `compileSdkVersion` 对齐）。
+  本机 SDK 装在 `D:\Android\Sdk`，由 `android/local.properties` 指向——该文件随
+  `android/` 一起在 `.gitignore` 里，CI 上改由 `ANDROID_HOME` 提供。
+- **iOS**：**只能在 macOS 上构建**。Xcode 不发行 Windows 版，这不是工具链没配好，
+  是没有可配的东西——编译器、SDK、签名工具全部锁在 macOS 里。
+  本机 `npx cap add ios` 只能铺出 Xcode 工程（会提示
+  `Skipping pod install because CocoaPods is not installed`），编译必须交给 CI。
 
 ```bash
-npm run build                  # 先生成 dist/
+npm run build:capacitor        # 生成 dist/（capacitor 目标，见下）
 
 # Android
-npm run cap:add:android        # 只需一次
+npm run cap:add:android        # 只需一次：铺模板 + 同步图标
 npm run cap:android            # build + sync + 打开 Android Studio
 
 # iOS
@@ -253,22 +282,54 @@ npm run cap:add:ios            # 只需一次（仅 macOS）
 npm run cap:ios                # build + sync + 打开 Xcode
 ```
 
-在 Android Studio / Xcode 里点 Run 即可安装到设备或模拟器。
+不开 Android Studio，直接出 APK：
 
-> Capacitor 用 `file://` 加载，所以 `vite.config.ts` 会在该目标下把
-> `base` 切成 `./`。`npm run cap:sync` 已包含这一步，别手动改 `dist/`。
+```bash
+npm run cap:sync
+cd android && ./gradlew assembleDebug
+# 产物：android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+debug 包用的是 Android 自动生成的 debug 签名，可以直接侧载安装；
+要上架或分发给别人，得自备 keystore 走 `assembleRelease`。
+
+> **`android/` 与 `ios/` 都在 `.gitignore` 里**，属于生成产物，每次 `cap add`
+> 都从头铺 Capacitor 模板。由此带来两个必须知道的后果：
+>
+> 1. **图标必须靠脚本补**。`npx tauri icon` 早就生成了整套原生图标
+>    （`src-tauri/icons/android/` 与 `ios/`，已提交），但 `cap add` 铺的是
+>    Capacitor 模板自带的默认 logo。`scripts/sync-native-icons.mjs` 负责把它们
+>    覆盖过去，`cap:add:*` 脚本已经接上了这一步。漏掉的话构建日志一切正常，
+>    只有装到手机上才会发现图标不对。
+> 2. **不要直接改这两个目录里的文件**——改了下次 `cap add` 就丢。要固化原生改动
+>    （权限、manifest、原生插件），得先把对应目录从 `.gitignore` 里移出来改成提交。
 
 ### 构建目标是怎么切的
 
-`vite.config.ts` 按 `VITE_TARGET` 切换（`web` / `tauri` / `capacitor`）：
+`vite.config.ts` 里的 `resolveTarget()` 按三级优先决定目标，取值
+`web` / `tauri` / `capacitor`：
+
+| 优先级 | 来源 | 用途 |
+| --- | --- | --- |
+| 1 | `VITE_TARGET` 环境变量 | 手动覆盖、CI 交叉构建 |
+| 2 | `--mode capacitor` | 移动端（Capacitor 不像 Tauri 那样注入环境变量） |
+| 3 | `TAURI_ENV_PLATFORM` → `tauri`，否则 `web` | 桌面端 / 默认 |
+
+三个目标的差别：
 
 - `web`：启用 PWA 插件，`base = /`
 - `tauri`：关闭 PWA，构建目标降到 `chrome105` / `safari13` 以适配各平台 WebView
 - `capacitor`：关闭 PWA，`base = ./`
 
 Tauri CLI 会注入 `TAURI_ENV_PLATFORM`，所以 `npm run tauri:build` 自动识别为
-`tauri` 目标，不需要 `cross-env` 之类的额外依赖。手动构建时用 `.env`（见
-`.env.example`）或直接传环境变量。
+`tauri` 目标。**Capacitor CLI 什么都不注入**，所以移动端走 `--mode capacitor`
+（即 `npm run build:capacitor`）。用 mode 而不是引 `cross-env`，是为了不在
+npm scripts 里堆环境变量——Windows 上尤其难写。
+
+> ⚠️ 给原生壳构建时**必须**用 `npm run build:capacitor`，别图省事跑 `npm run build`。
+> 后者是 `web` 目标，会把 Service Worker 和 `manifest.webmanifest` 一起打进
+> APK / ipa——SW 会在 WebView 里缓存旧资源，症状是「代码改了，App 里还是老样子」。
+> `npm run cap:sync` 走的已经是正确目标。
 
 非 Web 目标下 `virtual:pwa-register` 由 `vite.config.ts` 里的一个桩插件接管，
 使 `src/apps/web/pwa.ts` 三端都能原样编译——**不给源码加 `if` 分支**。

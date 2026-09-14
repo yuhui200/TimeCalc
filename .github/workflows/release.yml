@@ -9,8 +9,12 @@
 #   1. 推 tag：      git tag v0.1.0 && git push origin v0.1.0
 #   2. 手动触发：    Actions → 本工作流 → Run workflow，填一个 tag
 #
+# 同时构建移动端（Android APK / iOS 未签名 ipa）。移动端同样无法在本机出包：
+# iOS 的 Xcode 只在 macOS 上运行，Android 需要完整 SDK。
+#
 # 产物默认进 **草稿** Release，确认无误后手动点 Publish 才会公开。
-# 未做代码签名：macOS 首次打开需右键「打开」，Windows 可能弹 SmartScreen。
+# 未做代码签名：macOS 首次打开需右键「打开」，Windows 可能弹 SmartScreen，
+# Android 装的是 debug 签名的 APK，iOS 的 ipa 未签名、需自己重签。
 # 要消除提示需配置签名证书（见文件末尾说明）。
 name: 构建各平台安装包
 
@@ -148,6 +152,153 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+  # -------------------------------------------------------------------------
+  # 移动端。产物先作为 workflow artifact 传，再由末尾的 attach-mobile 统一挂到
+  # Release 上。**不在这里直接传 Release**：tauri-action 的 build job 也在写同一个
+  # Release，两个 job 并行会撞车（谁先跑完谁创建，正文由先到的决定）。
+  # -------------------------------------------------------------------------
+  android:
+    name: 打包 android
+    needs: verify
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Capacitor 7 的 Android 工程用 AGP 8.x，需要 JDK 17+；选 21 是因为
+      # Gradle 8.11 对 21 是一等支持，且和本机验证过的版本一致。
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - uses: android-actions/setup-android@v3
+
+      # 显式装版本，不依赖 AGP 的自动下载：自动下载在 license 没接受时会静默失败，
+      # 报错信息离真正原因很远。版本要和 android/variables.gradle 里的一致。
+      - name: 安装 Android SDK 组件
+        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - run: npm ci
+
+      # 必须用 build:capacitor 而不是 build——后者是 web 目标，会把
+      # Service Worker 和 manifest 一起打进 APK，SW 在 WebView 里缓存旧资源。
+      - run: npm run build:capacitor
+
+      # android/ 在 .gitignore 里，每次由模板重新生成，保证可复现。
+      # 用 cap:add:android 而不是裸的 cap add：它后面接了 sync-native-icons，
+      # 否则铺的是 Capacitor 模板自带的默认 logo，构建日志里看不出来。
+      - run: npm run cap:add:android
+
+      - name: 编译 debug APK
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: timecalc-android
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+  ios:
+    name: 打包 ios
+    needs: verify
+    # Xcode 只在 macOS 上运行，这一步没有别的位置可放
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build:capacitor
+
+      # macOS runner 自带 CocoaPods，cap add 会自动跑 pod install。
+      # 同理走 cap:add:ios，它会顺带把 AppIcon 换成 TimeCalc 的。
+      - run: npm run cap:add:ios
+      - run: npx cap sync ios
+
+      # 不签名归档。没有 Apple 开发者账号（$99/年）就只能到这里——
+      # 产出的 ipa 要用 AltStore / Sideloadly 拿自己的 Apple ID 重签才能装。
+      - name: 归档（跳过签名）
+        working-directory: ios/App
+        run: |
+          xcodebuild archive \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/TimeCalc.xcarchive" \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: 打成未签名 ipa
+        run: |
+          set -euo pipefail
+          # 不写死 App.app：产物名跟随 Xcode target 的 PRODUCT_NAME，
+          # Capacitor 改过模板的话会变，这里用通配找。
+          APP_PATH=$(find "$RUNNER_TEMP/TimeCalc.xcarchive/Products/Applications" \
+            -maxdepth 1 -name '*.app' | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "归档里没找到 .app，内容如下："
+            ls -R "$RUNNER_TEMP/TimeCalc.xcarchive/Products" || true
+            exit 1
+          fi
+          echo "找到 $APP_PATH"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP_PATH" "$RUNNER_TEMP/ipa/Payload/"
+          cd "$RUNNER_TEMP/ipa"
+          zip -qry TimeCalc-unsigned.ipa Payload
+          ls -la TimeCalc-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: timecalc-ios
+          path: ${{ runner.temp }}/ipa/TimeCalc-unsigned.ipa
+          if-no-files-found: error
+
+  # 所有平台的包都出完后，统一挂到同一个 Release 上。
+  # 用 gh release upload 而不是 action-gh-release：前者只加附件，
+  # 绝不会碰 release 正文——正文归 tauri-action 那个 job 所有。
+  attach-mobile:
+    name: 附加移动端产物到 Release
+    needs: [build, android, ios]
+    # 移动端任一个挂掉也要把已有的包传上去，所以用 always()；
+    # 但 build 失败时 Release 根本不存在，那就没必要跑。
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-22.04
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: 上传到 Release
+        run: |
+          set -euo pipefail
+          # 用数组而不是把 find 结果塞进一个字符串：后者靠 shell 的词分割拆参数，
+          # 路径里一旦有空格就会静默传错参数（少一个文件或传成两个不存在的路径）。
+          mapfile -t FILES < <(find artifacts -type f \( -name '*.apk' -o -name '*.ipa' \))
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "没有找到 apk / ipa，跳过"
+            exit 0
+          fi
+          printf '将要上传：%s\n' "${FILES[@]}"
+          # --clobber：同 tag 重跑时覆盖同名附件，否则第二次会因重名失败
+          gh release upload "$RELEASE_TAG" "${FILES[@]}" \
+            --repo "$GITHUB_REPOSITORY" --clobber
 
 # ---------------------------------------------------------------------------
 # 如需消除系统安全提示（可选）
