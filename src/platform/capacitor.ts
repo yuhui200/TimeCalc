@@ -20,6 +20,7 @@ import type {
   ShortcutAdapter,
 } from './types';
 import { fail, ok, okVoid } from './types';
+import { detectOs } from './detect';
 import { WebCalendarAdapter, createWebPlatform, toCoreEvent } from './web';
 
 /* ------------------------------------------------------------------ */
@@ -39,13 +40,48 @@ class CapacitorNotificationAdapter implements NotificationAdapter {
     }
   }
 
+  /**
+   * 申请通知权限，并在 Android 上顺带把「精确闹钟」开关一起要了。
+   *
+   * 为什么还要第二步：Android 12+ 起 `SCHEDULE_EXACT_ALARM` 属于**特殊应用权限**，
+   * 清单里声明只是拿到「可以申请」的资格，**Android 14+ 上默认仍是拒绝的**。
+   * 没有它，插件会打一条 warning 后退回 `setAndAllowWhileIdle`：
+   * 通知照样响，但 Doze 模式下可能晚几分钟——而倒计时的全部意义就是到点响。
+   *
+   * 放在这里而不是 `scheduleAt()`：本方法是用户在界面上点「启用提醒」触发的，
+   * 此时弹系统设置页符合预期；排期是后台动作，不该把用户突然拽去设置界面。
+   *
+   * 仅限 Android：插件在 iOS 上把这两个方法实现成了 `call.unimplemented()`，
+   * 直接调会 reject。
+   */
   async requestPermission(): Promise<NotificationPermissionState> {
     try {
       const { LocalNotifications } = await import('@capacitor/local-notifications');
       const { display } = await LocalNotifications.requestPermissions();
-      return mapPermission(display);
+      const state = mapPermission(display);
+
+      // 通知总权限都没给，精确闹钟无从谈起，也别再弹设置页打扰用户
+      if (state === 'granted') await this.requestExactAlarm();
+      return state;
     } catch {
       return 'unsupported';
+    }
+  }
+
+  /**
+   * 把用户送到系统的「闹钟和提醒」开关页。
+   * 已授权则直接返回——免得每次点「启用提醒」都跳一次设置。
+   */
+  private async requestExactAlarm(): Promise<void> {
+    if (detectOs() !== 'android') return;
+    try {
+      const { LocalNotifications } = await import('@capacitor/local-notifications');
+      const { exact_alarm } = await LocalNotifications.checkExactNotificationSetting();
+      if (exact_alarm === 'granted') return;
+      await LocalNotifications.changeExactNotificationSetting();
+    } catch {
+      // 老版本插件没有这两个方法，或设备没有该设置页：退回非精确闹钟即可。
+      // 不该因为「拿不到更精确的闹钟」让整个授权流程失败。
     }
   }
 

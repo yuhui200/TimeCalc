@@ -191,8 +191,9 @@ jobs:
       - run: npm run build:capacitor
 
       # android/ 在 .gitignore 里，每次由模板重新生成，保证可复现。
-      # 用 cap:add:android 而不是裸的 cap add：它后面接了 sync-native-icons，
-      # 否则铺的是 Capacitor 模板自带的默认 logo，构建日志里看不出来。
+      # 用 cap:add:android 而不是裸的 cap add：它后面接了 sync-native.mjs，
+      # 负责补回模板不会带的图标与精确闹钟权限（见脚本头部说明）。
+      # 漏了不会构建失败，只会装到真机才发现——所以必须走这个入口。
       - run: npm run cap:add:android
 
       - name: 编译 debug APK

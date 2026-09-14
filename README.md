@@ -296,13 +296,48 @@ debug 包用的是 Android 自动生成的 debug 签名，可以直接侧载安�
 > **`android/` 与 `ios/` 都在 `.gitignore` 里**，属于生成产物，每次 `cap add`
 > 都从头铺 Capacitor 模板。由此带来两个必须知道的后果：
 >
-> 1. **图标必须靠脚本补**。`npx tauri icon` 早就生成了整套原生图标
->    （`src-tauri/icons/android/` 与 `ios/`，已提交），但 `cap add` 铺的是
->    Capacitor 模板自带的默认 logo。`scripts/sync-native-icons.mjs` 负责把它们
->    覆盖过去，`cap:add:*` 脚本已经接上了这一步。漏掉的话构建日志一切正常，
->    只有装到手机上才会发现图标不对。
-> 2. **不要直接改这两个目录里的文件**——改了下次 `cap add` 就丢。要固化原生改动
->    （权限、manifest、原生插件），得先把对应目录从 `.gitignore` 里移出来改成提交。
+> 1. **原生定制必须靠脚本补**。`scripts/sync-native.mjs` 负责把模板不会带的
+>    那几处补回去，`cap:add:*` 脚本已经接上了这一步：
+>    - **App 图标**——`npx tauri icon` 早就生成了整套原生图标
+>      （`src-tauri/icons/android/` 与 `ios/`，已提交），但 `cap add` 铺的是
+>      Capacitor 模板自带的默认 logo。
+>    - **`SCHEDULE_EXACT_ALARM` 权限**——倒计时通知要靠它才精确，
+>      理由见下面「Android 上的精确闹钟」。
+>
+>    这一类的共同点是**漏了不会构建失败**：日志一切正常，只有装到真机上
+>    才看得出来。所以凡是要加原生配置，都往这个脚本里加，别手改。
+> 2. **不要直接改这两个目录里的文件**——改了下次 `cap add` 就丢。要固化上面
+>    覆盖不到的原生改动（原生插件、自定义 manifest 节点），得先把对应目录从
+>    `.gitignore` 里移出来改成提交。
+
+#### Android 上的精确闹钟
+
+倒计时到点要靠 `@capacitor/local-notifications` 把通知预排到未来的某一刻。
+Android 12（API 31）起这件事多了一道手续——`SCHEDULE_EXACT_ALARM` 是
+**特殊应用权限**，跟通知权限不是一回事：
+
+- **清单里声明**只是拿到「有资格申请」；
+- **Android 14+ 默认是拒绝的**，得用户自己在「闹钟和提醒」里打开。
+
+两道都要，缺一不可。少了会怎样：插件不崩，而是在
+`setExactIfPossible()` 里打一条 warning 后退回 `setAndAllowWhileIdle`——
+通知照样响，但**时间不精确**，Doze 模式下可能晚几分钟。倒计时的全部意义
+就是到点响，所以这条链上两处都补齐了：
+
+| 位置 | 做了什么 |
+| --- | --- |
+| `scripts/sync-native.mjs` | 往 app manifest 里补 `SCHEDULE_EXACT_ALARM` 声明 |
+| `src/platform/capacitor.ts` 的 `requestExactAlarm()` | 用户点「启用提醒」时，若尚未授权就跳系统设置页 |
+
+几个刻意的取舍：
+
+- **只在 Android 上做**。插件把 iOS 侧这两个方法实现成了 `call.unimplemented()`，
+  直接调会 reject——必须按平台分支，不能盲调。
+- **放在 `requestPermission()` 而不是 `scheduleAt()`**。前者是用户点按钮触发的，
+  弹设置页符合预期；后者是后台排期，突然把用户拽去设置界面是骚扰。
+- **已授权就直接返回**，不会每次点「启用提醒」都跳一次设置。
+- **失败静默吞掉**。老版本插件没这两个方法、或设备没有该设置页时，退回非精确
+  闹钟即可——不该因为「拿不到更精确的闹钟」让整个授权流程失败。
 
 ### 构建目标是怎么切的
 
