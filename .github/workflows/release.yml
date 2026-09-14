@@ -260,8 +260,10 @@ jobs:
           set -euo pipefail
           # 不写死 App.app：产物名跟随 Xcode target 的 PRODUCT_NAME，
           # Capacitor 改过模板的话会变，这里用通配找。
+          # 用 -print -quit 而不是 `| head -1`：后者在 set -o pipefail 下，
+          # head 提前退出会让 find 收到 SIGPIPE 返回非零，把整步判成失败。
           APP_PATH=$(find "$RUNNER_TEMP/TimeCalc.xcarchive/Products/Applications" \
-            -maxdepth 1 -name '*.app' | head -1)
+            -maxdepth 1 -name '*.app' -print -quit)
           if [ -z "$APP_PATH" ]; then
             echo "归档里没找到 .app，内容如下："
             ls -R "$RUNNER_TEMP/TimeCalc.xcarchive/Products" || true
