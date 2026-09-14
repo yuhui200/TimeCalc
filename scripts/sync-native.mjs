@@ -39,6 +39,25 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
  */
 const ANDROID_ICON_NAMES = ['ic_launcher.png', 'ic_launcher_round.png', 'ic_launcher_foreground.png'];
 
+/**
+ * mipmap-* 各目录之外的图标相关文件，同样要覆盖。相对 `src-tauri/icons/android/` 与
+ * `android/app/src/main/res/` 的同一路径。
+ *
+ *   mipmap-anydpi-v26/ic_launcher.xml —— 自适应图标的定义，声明前景用
+ *     `@mipmap/ic_launcher_foreground`、背景用 `@color/ic_launcher_background`
+ *   values/ic_launcher_background.xml —— 上面那个背景色
+ *
+ * 就当前这两个文件而言，Tauri 生成的与 Capacitor 模板里的**语义完全一致**
+ * （背景都是白色，自适应 XML 只是元素顺序不同），所以拷不拷看不出区别。
+ * 留着是为了脚本本身完整：将来换图标时若 Tauri 给出不同的背景色，
+ * 这里不覆盖就会静默沿用模板的值。
+ *
+ * 注意 Capacitor 还带一个 `mipmap-anydpi-v26/ic_launcher_round.xml`，
+ * Tauri 不生成对应文件，因此不在覆盖范围内。它引用的仍是上面这两个资源，
+ * 所以前景与背景照样跟着换。
+ */
+const ANDROID_EXTRA_FILES = ['mipmap-anydpi-v26/ic_launcher.xml', 'values/ic_launcher_background.xml'];
+
 const ANDROID_RES = join(root, 'android', 'app', 'src', 'main', 'res');
 const ANDROID_MANIFEST = join(root, 'android', 'app', 'src', 'main', 'AndroidManifest.xml');
 
@@ -67,7 +86,88 @@ function syncAndroidIcons() {
       copied++;
     }
   }
-  console.log(`✓ Android 图标：覆盖 ${copied} 个 mipmap`);
+
+  for (const rel of ANDROID_EXTRA_FILES) {
+    const from = join(src, rel);
+    const to = join(ANDROID_RES, rel);
+    // 目标目录不存在说明模板结构变了，别硬造目录——静默跳过比造出个
+    // 谁都不会读的路径要好。真出问题会在真机上以「图标没换」的形式暴露。
+    if (!existsSync(from) || !existsSync(dirname(to))) continue;
+    copyFileSync(from, to);
+    copied++;
+  }
+
+  console.log(`✓ Android 图标：覆盖 ${copied} 个文件（mipmap + 自适应定义）`);
+}
+
+/**
+ * AGP 默认拒绝在含非 ASCII 字符的路径下构建（本项目是 `D:\系统\TimeCalc`）。
+ * 这道检查针对的是 Windows 上一些老工具对中文路径的兼容问题。
+ *
+ * **仅在本机路径确实含非 ASCII 时才放行**：实测 aapt2 / d8 / 资源合并
+ * 都能正常处理中文路径（本机完整编译通过），但 CI 跑在 Linux 上、
+ * 路径全是 ASCII，那边没有必要也不该把这个安全检查关掉。
+ */
+function syncAndroidGradleProperties() {
+  const path = join(root, 'android', 'gradle.properties');
+  if (!existsSync(path)) return console.log('· 跳过 gradle.properties：没有 android/（先跑 cap add android）');
+
+  // 路径里有没有非 ASCII 字符
+  if (!/[^\x00-\x7F]/.test(root)) {
+    return console.log('✓ gradle.properties：项目路径全 ASCII，保留 AGP 的路径检查');
+  }
+
+  const text = readFileSync(path, 'utf8');
+  if (text.includes('android.overridePathCheck')) {
+    return console.log('✓ gradle.properties：已放行非 ASCII 路径');
+  }
+
+  writeFileSync(
+    path,
+    `${text.replace(/\n*$/, '\n')}\n` +
+      '# 项目路径含非 ASCII 字符（中文目录名），AGP 默认会拒绝构建。\n' +
+      '# 实测本项目的 aapt2 / d8 / 资源合并都能正常处理，故放行。\n' +
+      '# 由 scripts/sync-native.mjs 自动补上——android/ 是生成目录。\n' +
+      'android.overridePathCheck=true\n',
+  );
+  console.log('✓ gradle.properties：放行非 ASCII 路径（android.overridePathCheck=true）');
+}
+
+/**
+ * 把 package.json 的版本号写进 Android 的 build.gradle。
+ *
+ * Capacitor 模板铺的是 `versionCode 1` / `versionName "1.0"`，跟发布版本毫无关系。
+ * 装到手机上，「设置 → 应用」里显示的就是这个值——Release 页面写着 0.2.0、
+ * 手机上却显示 1.0，对不上。
+ *
+ * versionCode 必须是**单调递增的整数**（Android 靠它判断能否覆盖安装），
+ * 而 semver 带点号，所以做固定映射：major*10000 + minor*100 + patch，
+ * 0.2.0 → 200。预发布标识（如 1.0.0-beta.1）在这里忽略——本项目不打预发布。
+ */
+function syncAndroidVersion() {
+  const gradlePath = join(root, 'android', 'app', 'build.gradle');
+  if (!existsSync(gradlePath)) return console.log('· 跳过版本号：没有 android/（先跑 cap add android）');
+
+  const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+  const parsed = /^(\d+)\.(\d+)\.(\d+)/.exec(version);
+  if (!parsed) {
+    return console.log(`· 跳过版本号：package.json 的 version（${version}）不是 semver`);
+  }
+
+  const [, major, minor, patch] = parsed;
+  const versionCode = Number(major) * 10000 + Number(minor) * 100 + Number(patch);
+
+  const text = readFileSync(gradlePath, 'utf8');
+  const next = text
+    .replace(/(\bversionCode\s+)\d+/, `$1${versionCode}`)
+    .replace(/(\bversionName\s+)"[^"]*"/, `$1"${version}"`);
+
+  if (next === text) {
+    return console.log(`✓ Android 版本号：已是 ${version}（versionCode ${versionCode}）`);
+  }
+
+  writeFileSync(gradlePath, next);
+  console.log(`✓ Android 版本号：versionName=${version} versionCode=${versionCode}`);
 }
 
 function syncAndroidManifest() {
@@ -128,4 +228,6 @@ function syncIos() {
 
 syncAndroidIcons();
 syncAndroidManifest();
+syncAndroidVersion();
+syncAndroidGradleProperties();
 syncIos();
