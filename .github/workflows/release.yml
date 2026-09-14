@@ -228,9 +228,27 @@ jobs:
       - run: npm run build:capacitor
 
       # macOS runner 自带 CocoaPods，cap add 会自动跑 pod install。
-      # 同理走 cap:add:ios，它会顺带把 AppIcon 换成 TimeCalc 的。
+      # 同理走 cap:add:ios，它会顺带把 AppIcon 换成 TimeCalc 的，
+      # 并补上 SCHEDULE_EXACT_ALARM 之类的原生定制（iOS 侧会自动跳过）。
       - run: npm run cap:add:ios
       - run: npx cap sync ios
+
+      - name: 确认 CocoaPods 依赖已就绪
+        working-directory: ios/App
+        run: |
+          set -euo pipefail
+          # Capacitor 在 PATH 里找不到 pod 时**只打一条 warning 就跳过** pod install
+          # （见 @capacitor/cli 的 ios/update.js）。而 App.xcworkspace 是模板自带的空壳，
+          # 真正的 contents.xcworkspacedata 由 pod install 生成——少了它，
+          # 下一步的 xcodebuild -workspace 会以一个完全对不上号的错误失败。
+          # 这里显式检查一次，把真正的原因讲清楚。
+          if [ -f App.xcworkspace/contents.xcworkspacedata ]; then
+            echo "✓ CocoaPods 依赖已就绪"
+            exit 0
+          fi
+          echo "::warning::cap sync 没生成 App.xcworkspace/contents.xcworkspacedata，改为显式执行 pod install"
+          pod install
+          test -f App.xcworkspace/contents.xcworkspacedata
 
       # 不签名归档。没有 Apple 开发者账号（$99/年）就只能到这里——
       # 产出的 ipa 要用 AltStore / Sideloadly 拿自己的 Apple ID 重签才能装。
