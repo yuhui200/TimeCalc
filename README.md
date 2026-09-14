@@ -203,6 +203,13 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
 各平台只能在各自系统上打包（Windows 的 `.msi` 要在 Windows 上构建），
 Tauri 不提供交叉编译。
 
+> **已验证（Windows，2026-09-14）**：在 Rust 1.98.1 / MSVC 工具链上跑通
+> `npm run tauri:build:win`，首次全量编译约 6 分 36 秒，产出
+> `TimeCalc_0.1.0_x64_zh-CN.msi` 与 `_en-US.msi`（各 2.09 MB）、
+> `TimeCalc_0.1.0_x64-setup.exe`（1.52 MB）。
+> 打包过程中 Tauri 会自动从 GitHub 下载 WiX 3.14 与 NSIS 3.11 工具链。
+> **macOS 与 Linux 两个目标没有在对应系统上验证过**，上面的 CI 路径同样未经实跑。
+
 #### 拿全平台安装包：交给 CI
 
 因为上一条限制，想一次性拿到 Windows + macOS + Linux 三套安装包，

@@ -23,9 +23,12 @@
     "noEmit": true,
 
     "types": ["vite/client", "vitest/globals", "node"],
-    "baseUrl": ".",
+    // baseUrl 在 TypeScript 6.0 中已弃用，7.0 将移除（见 https://aka.ms/ts6）。
+    // 官方迁移方式是改用相对形式的 paths：目标写成 "./src/*"，
+    // 即按「本文件所在目录」解析——与原先 baseUrl: "." 的解析结果完全一致。
+    // 若写成 "src/*" 这种非相对形式，则必须保留 baseUrl，否则报 TS5090。
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["./src/*"]
     }
   },
   "include": [
