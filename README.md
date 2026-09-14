@@ -217,8 +217,8 @@ Tauri 不提供交叉编译。
 提供的四种 runner 上分别构建：
 
 ```bash
-git tag v0.1.1
-git push origin v0.1.1     # 推送 tag 即触发，产物进草稿 Release
+git tag v0.2.0
+git push origin v0.2.0     # 推送 tag 即触发，产物进草稿 Release
 ```
 
 也可以在 Actions 页面手动触发（Run workflow）。产物：

@@ -1,7 +1,7 @@
 {
   "name": "timecalc",
   "private": true,
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "module",
   "description": "TimeCalc — 跨平台时间计算器（PWA / Tauri 2 / Capacitor）",
   "license": "MIT",

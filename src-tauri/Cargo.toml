@@ -1,6 +1,6 @@
 [package]
 name = "timecalc"
-version = "0.1.1"
+version = "0.2.0"
 description = "TimeCalc — 跨平台时间计算器"
 authors = ["TimeCalc"]
 # 与 tauri.conf.json 的 bundle.identifier 保持一致
