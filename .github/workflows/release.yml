@@ -231,11 +231,24 @@ jobs:
       - name: 归档（跳过签名）
         working-directory: ios/App
         run: |
+          set -euo pipefail
+          # Capacitor 的 iOS 模板里**没有共享 scheme**（工程里只有 project.pbxproj），
+          # scheme 靠 Xcode 按 target 自动创建。先跑一次 -list 触发创建，
+          # 再从中读出真实名字——写死 -scheme App 等于赌自动创建的行为不变。
+          xcodebuild -list -workspace App.xcworkspace
+          SCHEME=$(xcodebuild -list -json -workspace App.xcworkspace | python3 -c "
+          import json, sys
+          schemes = (json.load(sys.stdin).get('workspace') or {}).get('schemes') or []
+          if not schemes:
+              sys.exit('xcodebuild -list 没有返回任何 scheme，自动创建没生效')
+          print(schemes[0])
+          ")
+          echo "使用 scheme：$SCHEME"
+
           xcodebuild archive \
             -workspace App.xcworkspace \
-            -scheme App \
+            -scheme "$SCHEME" \
             -configuration Release \
-            -sdk iphoneos \
             -destination 'generic/platform=iOS' \
             -archivePath "$RUNNER_TEMP/TimeCalc.xcarchive" \
             CODE_SIGN_IDENTITY="" \
