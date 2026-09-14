@@ -42,7 +42,7 @@
     "longDescription": "日期差、日期加减、时间差、时区转换、Unix 时间戳与自然语言时间解析。全部在本地计算，不联网、不上传任何数据。",
     "copyright": "TimeCalc",
     "publisher": "TimeCalc",
-    "homepage": "https://github.com/timecalc/timecalc",
+    "homepage": "https://github.com/yuhui200/TimeCalc",
     "licenseFile": "../LICENSE",
     "icon": [
       "icons/32x32.png",
