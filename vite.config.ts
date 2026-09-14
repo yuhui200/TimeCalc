@@ -2,9 +2,19 @@
 import { defineConfig, type PluginOption } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { readFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 
 const srcDir = fileURLToPath(new URL('./src', import.meta.url));
+
+/**
+ * 版本号直接读 package.json，不再在下面写死。
+ * 写死的话每次升版本都要手动同步这里，漏了就变成「安装包是 0.1.1、
+ * 界面里显示 0.1.0」。CI 里需要覆盖时仍可用 VITE_APP_VERSION。
+ */
+const pkg = JSON.parse(
+  readFileSync(new URL('./package.json', import.meta.url), 'utf8'),
+) as { version: string };
 
 /**
  * 构建目标：web(PWA) | tauri(桌面) | capacitor(移动)。
@@ -188,7 +198,7 @@ export default defineConfig({
 
   define: {
     __APP_TARGET__: JSON.stringify(TARGET),
-    __APP_VERSION__: JSON.stringify(process.env.VITE_APP_VERSION ?? '0.1.0'),
+    __APP_VERSION__: JSON.stringify(process.env.VITE_APP_VERSION ?? pkg.version),
   },
 
   
