@@ -90,9 +90,13 @@ jobs:
         if: matrix.label == 'linux'
         run: |
           sudo apt-get update
+          # 清单以 Tauri 官方文档为准（https://v2.tauri.app/start/prerequisites/），
+          # 只多一个 patchelf（AppImage 打包用）。
+          # 注意：**不要**加 libappindicator3-dev。它和下面这个
+          # libayatana-appindicator3-dev 是同一个库的两套 fork，
+          # 同时装会让 apt 解析失败——2026-09-14 的 v0.1.0 构建就是这样挂的。
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
-            libappindicator3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
             libxdo-dev \
