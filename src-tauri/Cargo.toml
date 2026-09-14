@@ -1,0 +1,39 @@
+[package]
+name = "timecalc"
+version = "0.1.0"
+description = "TimeCalc — 跨平台时间计算器"
+authors = ["TimeCalc"]
+# 与 tauri.conf.json 的 bundle.identifier 保持一致
+default-run = "timecalc"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+# Tauri 2 的移动端支持要求库名与 package 名区分开，否则 iOS/Android 目标会冲突
+name = "timecalc_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+
+# 插件版本必须与前端 package.json 里的 @tauri-apps/plugin-* 大版本对齐（都是 2.x）
+tauri-plugin-notification = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+tauri-plugin-global-shortcut = "2"
+
+[features]
+# Tauri 用于区分自定义协议构建的开关，默认开启即可
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+# 桌面端体积优先：本应用是纯前端计算，Rust 侧只有胶水代码
+codegen-units = 1
+lto = true
+opt-level = "s"
+panic = "abort"
+strip = true

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TimeCalc · 离线</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: grid;
+        place-items: center;
+        font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+        background: #f6f7f9;
+        color: #111827;
+        padding: 24px;
+        text-align: center;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #0b0f16;
+          color: #e5e7eb;
+        }
+      }
+      h1 {
+        font-size: 1.5rem;
+        margin: 0 0 8px;
+      }
+      p {
+        color: #6b7280;
+        max-width: 32ch;
+        line-height: 1.6;
+      }
+      button {
+        min-height: 48px;
+        padding: 0 24px;
+        border-radius: 999px;
+        border: 1px solid currentColor;
+        background: transparent;
+        color: inherit;
+        font-size: 1rem;
+        cursor: pointer;
+        margin-top: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>当前处于离线状态</h1>
+      <p>
+        TimeCalc 的核心计算全部在本地完成，但首次加载需要下载应用外壳。请恢复网络后重试。
+      </p>
+      <button onclick="location.reload()">重新加载</button>
+    </main>
+  </body>
+</html>

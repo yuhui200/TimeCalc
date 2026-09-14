@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=5"
+    />
+    <meta
+      name="description"
+      content="TimeCalc — 跨平台时间计算器：日期差、日期加减、时间差、时区转换、Unix 时间戳、自然语言输入。离线可用，可安装。"
+    />
+    <meta name="color-scheme" content="light dark" />
+    <!--
+      地址栏配色只有一条，初值由下面的内联脚本按解析后的主题改写，
+      之后由 useTheme 接管。不用 media 查询是因为「用户显式选了暗色但系统是亮色」
+      时 media 查询会给出错误答案。
+    -->
+    <meta name="theme-color" content="#f6f7f9" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="TimeCalc" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/pwa-192x192.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180x180.png" />
+    <title>TimeCalc · 时间计算器</title>
+    <script>
+      /*
+       * 首屏防闪烁（FOUC）。
+       *
+       * 这段脚本必须内联、必须同步、必须在 <body> 之前执行：
+       * 一旦交给 React 去设 data-theme，用户会先看到一帧白底再闪成暗色。
+       *
+       * 存储格式与 src/db/settings.ts 严格对应：
+       *   localStorage['timecalc:settings'] = JSON.stringify({ theme, contrast, ... })
+       * 字段名若改动，两边必须同步（settings.test.ts 有回归测试守着）。
+       */
+      (function () {
+        try {
+          var raw = window.localStorage.getItem('timecalc:settings');
+          var s = raw ? JSON.parse(raw) : {};
+          var mode = s.theme === 'dark' || s.theme === 'light' ? s.theme : 'system';
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var resolved = mode === 'system' ? (prefersDark ? 'dark' : 'light') : mode;
+          var root = document.documentElement;
+          root.dataset.theme = resolved;
+          root.dataset.contrast = s.contrast === 'high' ? 'hc' : 'normal';
+          // 让原生控件（滚动条、日期选择器）也跟随主题
+          root.style.colorScheme = resolved;
+          // 地址栏配色同样要在首屏定好，否则暗色下顶部会闪一条白
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', resolved === 'dark' ? '#0e1116' : '#f6f7f9');
+        } catch (e) {
+          /* localStorage 不可用（隐私模式）：保持默认亮色即可 */
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <!--
+      启动骨架。
+      手机弱网下 JS 要几百毫秒才执行，这段时间不能是一片空白。
+      用 CSS 系统颜色（Canvas / CanvasText）而不是我们的设计令牌：
+      令牌要等样式表加载才存在，而系统颜色在首帧就可用，并且会自动
+      跟随上面设好的 color-scheme。React 挂载后由 main.tsx 移除。
+    -->
+    <div
+      id="tc-boot"
+      style="
+        display: flex;
+        min-height: 100vh;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        background: Canvas;
+        color: CanvasText;
+        font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+      "
+    >
+      <span style="font-size: 40px; line-height: 1">🧮</span>
+      <span style="font-size: 14px; opacity: 0.7">TimeCalc 正在启动…</span>
+    </div>
+
+    <div id="root"></div>
+    <noscript>
+      <div style="padding: 24px; font-family: system-ui">
+        TimeCalc 需要启用 JavaScript 才能运行。
+      </div>
+    </noscript>
+    <script type="module" src="/src/apps/web/main.tsx"></script>
+  </body>
+</html>

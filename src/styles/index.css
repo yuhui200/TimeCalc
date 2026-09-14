@@ -1,0 +1,257 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==================================================================
+ * 设计令牌
+ *
+ * 三套主题（light / dark / high-contrast）只改这一处颜色变量，
+ * 组件里一律使用 `var(--tc-*)`，**不允许**出现写死的十六进制色值。
+ * 这样加主题时不用碰任何组件代码。
+ *
+ * 命名约定：
+ *   --tc-bg          页面底色
+ *   --tc-surface     卡片/面板底色（比 bg 略亮或略暗，形成层次）
+ *   --tc-surface-2   次级面板（输入框、代码块）
+ *   --tc-line        分隔线与边框
+ *   --tc-ink         主文字
+ *   --tc-muted       次要文字（必须仍满足 4.5:1 对比度）
+ *   --tc-accent      强调色（主按钮、焦点环）
+ *   --tc-accent-ink  强调色上的文字
+ * ================================================================== */
+
+:root,
+:root[data-theme='light'] {
+  --tc-bg: #f6f7f9;
+  --tc-surface: #ffffff;
+  --tc-surface-2: #f1f3f6;
+  --tc-line: #dfe3e9;
+  --tc-line-strong: #c3cad4;
+  --tc-ink: #131720;
+  --tc-muted: #5b6472;
+  --tc-accent: #2563eb;
+  --tc-accent-hover: #1d4ed8;
+  --tc-accent-ink: #ffffff;
+  --tc-accent-soft: #e5edff;
+  --tc-ok: #0f8a4d;
+  --tc-warn: #b26a00;
+  --tc-danger: #c62b2b;
+  --tc-shadow: 0 1px 2px rgb(16 24 40 / 0.06), 0 8px 24px -12px rgb(16 24 40 / 0.18);
+}
+
+:root[data-theme='dark'] {
+  --tc-bg: #0e1116;
+  --tc-surface: #171b22;
+  --tc-surface-2: #1f242d;
+  --tc-line: #2b323d;
+  --tc-line-strong: #3d4653;
+  --tc-ink: #eef1f6;
+  /* 暗色下的次要文字不能直接压暗，否则对比度不足；用中灰保证 ≥ 4.5:1 */
+  --tc-muted: #9aa4b2;
+  --tc-accent: #6ea8fe;
+  --tc-accent-hover: #8bbcff;
+  --tc-accent-ink: #0b1220;
+  --tc-accent-soft: #1b2740;
+  --tc-ok: #4ade80;
+  --tc-warn: #fbbf24;
+  --tc-danger: #f87171;
+  --tc-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -12px rgb(0 0 0 / 0.7);
+}
+
+/*
+ * 高对比度模式：不是简单地把颜色调深，而是
+ *   - 边框加粗到 2px 并提高到接近纯黑/纯白
+ *   - 去掉半透明与柔和阴影（低视力用户难以分辨）
+ *   - 正文与背景拉到 21:1 的极限对比
+ */
+:root[data-contrast='hc'] {
+  --tc-bg: #ffffff;
+  --tc-surface: #ffffff;
+  --tc-surface-2: #ffffff;
+  --tc-line: #000000;
+  --tc-line-strong: #000000;
+  --tc-ink: #000000;
+  --tc-muted: #1a1a1a;
+  --tc-accent: #0033cc;
+  --tc-accent-hover: #002299;
+  --tc-accent-ink: #ffffff;
+  --tc-accent-soft: #e6ecff;
+  --tc-ok: #006622;
+  --tc-warn: #7a4a00;
+  --tc-danger: #a80000;
+  --tc-shadow: none;
+}
+
+:root[data-theme='dark'][data-contrast='hc'] {
+  --tc-bg: #000000;
+  --tc-surface: #000000;
+  --tc-surface-2: #0a0a0a;
+  --tc-line: #ffffff;
+  --tc-line-strong: #ffffff;
+  --tc-ink: #ffffff;
+  --tc-muted: #e8e8e8;
+  --tc-accent: #7fb2ff;
+  --tc-accent-hover: #a9cbff;
+  --tc-accent-ink: #000000;
+  --tc-accent-soft: #001a3d;
+  --tc-ok: #5cff9d;
+  --tc-warn: #ffd166;
+  --tc-danger: #ff8080;
+  --tc-shadow: none;
+}
+
+/* ==================================================================
+ * 基础层
+ * ================================================================== */
+
+@layer base {
+  * {
+    /* 移动端点击不出现灰色高亮块，改用我们自己的 :active 样式 */
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    /* 防止 iOS 横屏时字号被自动放大 */
+    -webkit-text-size-adjust: 100%;
+    /* 键盘弹出时页面不被顶飞 */
+    height: 100%;
+  }
+
+  body {
+    @apply bg-bg text-ink antialiased;
+    margin: 0;
+    min-height: 100%;
+    font-family: theme('fontFamily.sans');
+    /* 数字等宽：结果区域数字跳动时不会左右抖动 */
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 数字/时间类文本强制等宽，便于上下对齐比较 */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+  }
+
+  /* 统一的焦点样式：2px 实心环 + 2px 偏移，高对比模式下自动变粗 */
+  :focus-visible {
+    outline: 2px solid var(--tc-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  :root[data-contrast='hc'] :focus-visible {
+    outline-width: 3px;
+    outline-offset: 3px;
+  }
+
+  /* 尊重「减弱动效」偏好：不只是关动画，还要去掉过渡 */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* 高对比模式下所有边框加粗，让元素边界清晰可辨 */
+  :root[data-contrast='hc'] .border,
+  :root[data-contrast='hc'] .border-2 {
+    border-width: 2px;
+  }
+
+  /* 只对键盘用户隐藏，屏幕阅读器仍可读 */
+  .sr-only-focusable:not(:focus):not(:focus-within) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border-width: 0;
+  }
+
+  /* 滚动条跟随主题，避免暗色下出现刺眼的白色滚动条 */
+  @supports (scrollbar-color: auto) {
+    html {
+      scrollbar-color: var(--tc-line-strong) transparent;
+    }
+  }
+}
+
+/* ==================================================================
+ * 组件层
+ * ================================================================== */
+
+@layer components {
+  /* 面板：所有功能页共用的卡片容器 */
+  .tc-card {
+    @apply rounded-card border border-line bg-surface p-4 shadow-card sm:p-5;
+  }
+
+  /*
+   * 触摸目标：需求要求「按钮至少 48px」。
+   * 用 min-height / min-width 而非固定 height，这样图标按钮与
+   * 文字按钮共用一套规则，内容更长时还能自然撑开。
+   */
+  .tc-tap {
+    @apply inline-flex min-h-tap min-w-tap items-center justify-center gap-2 rounded-xl px-4 text-base font-medium transition-colors;
+  }
+
+  /* 结果数值：需求要求「大字号」 */
+  .tc-result {
+    @apply tnum font-semibold text-result text-ink;
+  }
+
+  .tc-result-sm {
+    @apply tnum font-semibold text-resultSm text-ink;
+  }
+
+  /* 长结果自动换行且不撑破容器（中文长串的关键） */
+  .tc-break {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  /* 横向滚动区域：表格、时区面板在窄屏上的兜底 */
+  .tc-scroll-x {
+    @apply -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0;
+    scrollbar-width: thin;
+  }
+
+  /* 分段控件（Segmented）的选项 */
+  .tc-segment {
+    @apply relative flex min-h-tap flex-1 items-center justify-center whitespace-nowrap rounded-lg px-3 text-sm font-medium transition-colors;
+  }
+}
+
+/* ==================================================================
+ * 工具层
+ * ================================================================== */
+
+@layer utilities {
+  /* 安全区：iPhone 刘海屏底部横条会盖住固定底栏 */
+  .pb-safe {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.5rem);
+  }
+
+  .pt-safe {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  /* 命令面板与抽屉的遮罩 */
+  .tc-backdrop {
+    background-color: rgb(9 12 18 / 0.5);
+    backdrop-filter: blur(2px);
+  }
+
+  :root[data-contrast='hc'] .tc-backdrop {
+    /* 高对比下模糊会让文字更难读，改为纯色遮罩 */
+    background-color: rgb(0 0 0 / 0.75);
+    backdrop-filter: none;
+  }
+}

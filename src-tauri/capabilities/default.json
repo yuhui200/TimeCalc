@@ -1,0 +1,32 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "TimeCalc 主窗口的能力清单。只放开 src/platform/tauri.ts 真正会调用的那几个命令——多一条权限就多一分攻击面。",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+
+    "notification:default",
+
+    "clipboard-manager:allow-write-text",
+    "clipboard-manager:allow-read-text",
+
+    "dialog:allow-save",
+
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [
+        { "path": "$HOME/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$TEMP/**" }
+      ]
+    },
+
+    "global-shortcut:allow-register",
+    "global-shortcut:allow-unregister",
+    "global-shortcut:allow-unregister-all",
+    "global-shortcut:allow-is-registered"
+  ]
+}

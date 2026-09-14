@@ -1,0 +1,9 @@
+# Rust 编译产物。桌面端一次 release 构建能到几个 GB，绝对不要提交。
+/target/
+
+# Tauri 根据 capabilities 自动生成的权限 schema，随构建重新生成
+/gen/schemas/
+
+# 移动端工程由 `tauri android init` / `tauri ios init` 生成
+/gen/android/
+/gen/apple/

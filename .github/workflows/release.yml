@@ -1,0 +1,162 @@
+# 各平台安装包构建。
+#
+# 为什么需要 CI：Tauri **不支持交叉编译**。macOS 的 .dmg 只能在 macOS 上打、
+# Linux 的 .AppImage 只能在 Linux 上打（依赖 webkit2gtk 等原生库），
+# 从 Windows 出发无论怎么配都做不出来。GitHub Actions 免费提供三种 runner，
+# 是拿到「全平台安装包」的标准做法。
+#
+# 触发方式：
+#   1. 推 tag：      git tag v0.1.0 && git push origin v0.1.0
+#   2. 手动触发：    Actions → 本工作流 → Run workflow，填一个 tag
+#
+# 产物默认进 **草稿** Release，确认无误后手动点 Publish 才会公开。
+# 未做代码签名：macOS 首次打开需右键「打开」，Windows 可能弹 SmartScreen。
+# 要消除提示需配置签名证书（见文件末尾说明）。
+name: 构建各平台安装包
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '手动触发时要创建的 Release 标签'
+        required: true
+        default: 'v0.1.0'
+
+# tauri-action 要往 Release 里传产物，需要写权限
+permissions:
+  contents: write
+
+# 同一个 tag 重复触发时取消前一次，避免两个 job 抢着往同一个 Release 传文件
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: 类型检查与单元测试
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+  build:
+    name: 打包 ${{ matrix.label }}
+    needs: verify
+    # 一个平台失败不影响其它平台继续出包
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: windows
+            platform: windows-latest
+            targets: ''
+            # msi = WiX 安装包；nsis = 单文件 setup.exe
+            args: '--bundles msi,nsis'
+          - label: macos
+            platform: macos-latest
+            # 通用二进制：同一个 .dmg 同时支持 Apple Silicon 与 Intel
+            targets: 'aarch64-apple-darwin,x86_64-apple-darwin'
+            args: '--target universal-apple-darwin --bundles dmg'
+          - label: linux
+            platform: ubuntu-22.04
+            targets: ''
+            args: '--bundles appimage,deb'
+
+    runs-on: ${{ matrix.platform }}
+
+    env:
+      # 推 tag 触发时用 tag 名；手动触发时用输入的 tag。
+      # 抽成 env 有两个原因：一是不用在两个 with: 字段里重复这段表达式，
+      # 二是它内含单引号——把它放进单引号标量里会让 YAML 解析直接失败。
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag || github.ref_name }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # 22.04 而不是 24.04：Tauri 2 依赖 webkit2gtk-4.1，
+      # 22.04 的版本组合是官方文档验证过的，24.04 上偶有 ABI 问题。
+      - name: 安装 Linux 系统依赖
+        if: matrix.label == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libxdo-dev \
+            libssl-dev \
+            patchelf \
+            build-essential \
+            curl \
+            wget \
+            file
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+
+      # Rust 依赖编译很慢，缓存后二次构建能从十几分钟降到几分钟
+      - name: 缓存 Rust 编译产物
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - run: npm ci
+
+      # 不需要手动设 VITE_TARGET：Tauri CLI 会注入 TAURI_ENV_PLATFORM，
+      # vite.config.ts 据此自动切到 tauri 目标（关 PWA、改构建 target）。
+      - name: 构建并上传到 Release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: TimeCalc ${{ env.RELEASE_TAG }}
+          releaseBody: |
+            各平台安装包见下方 Assets。
+
+            | 平台 | 文件 | 说明 |
+            | --- | --- | --- |
+            | Windows | `*_x64-setup.exe` | NSIS 安装包，双击即装 |
+            | Windows | `*_x64_en-US.msi` | WiX 安装包，适合批量部署 |
+            | macOS | `*.dmg` | 通用二进制，Apple Silicon 与 Intel 通用 |
+            | Linux | `*.AppImage` | 免安装，`chmod +x` 后直接运行 |
+            | Linux | `*.deb` | Debian / Ubuntu 系 |
+          # 默认草稿：确认产物无误后再手动 Publish
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}
+
+# ---------------------------------------------------------------------------
+# 如需消除系统安全提示（可选）
+#
+# macOS 签名与公证，在 build job 的 env 里补上：
+#   APPLE_CERTIFICATE:            ${{ secrets.APPLE_CERTIFICATE }}            # .p12 的 base64
+#   APPLE_CERTIFICATE_PASSWORD:   ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+#   APPLE_SIGNING_IDENTITY:       ${{ secrets.APPLE_SIGNING_IDENTITY }}       # 如 "Developer ID Application: Xxx (TEAMID)"
+#   APPLE_ID:                     ${{ secrets.APPLE_ID }}
+#   APPLE_PASSWORD:               ${{ secrets.APPLE_PASSWORD }}               # App 专用密码
+#   APPLE_TEAM_ID:                ${{ secrets.APPLE_TEAM_ID }}
+#
+# Windows 签名需要一张代码签名证书，用 signtool 签或者配置
+#   TAURI_SIGNING_PRIVATE_KEY / TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+# 走 Tauri 自带的签名流程。
+# ---------------------------------------------------------------------------

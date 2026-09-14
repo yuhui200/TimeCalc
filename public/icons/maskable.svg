@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="TimeCalc maskable">
+  <defs>
+    <linearGradient id="gm" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3b82f6" />
+      <stop offset="1" stop-color="#1d4ed8" />
+    </linearGradient>
+  </defs>
+  <!-- maskable：图形收在中心 80% 安全区内，四周留足背景 -->
+  <rect width="512" height="512" fill="url(#gm)" />
+  <circle cx="256" cy="266" r="104" fill="none" stroke="#ffffff" stroke-width="20" />
+  <path d="M256 190v82l58 38" fill="none" stroke="#ffffff" stroke-width="20"
+        stroke-linecap="round" stroke-linejoin="round" />
+  <rect x="212" y="118" width="88" height="26" rx="13" fill="#ffffff" />
+</svg>
