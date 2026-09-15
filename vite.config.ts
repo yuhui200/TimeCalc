@@ -79,11 +79,22 @@ export default defineConfig(({ mode }) => {
   const tauriBuildTarget =
     process.env.TAURI_ENV_PLATFORM === 'windows' ? 'chrome105' : 'safari13';
 
+  /**
+   * 站点根路径。
+   *
+   * - Capacitor 走 file:// 或 capacitor://，必须用相对路径。
+   *   （这里**必须**是 capacitor 目标：默认 web 目标会连 Service Worker 和
+   *   manifest.webmanifest 一起打进原生包，SW 在 WebView 里会缓存旧资源。）
+   * - 其余默认 '/'，所以本地开发地址仍然是 localhost:5173。
+   * - `VITE_BASE` 用于部署到子路径：GitHub Pages 把站点放在 /<repo>/ 下，
+   *   那里 base 不能是 '/'，否则静态资源全部 404。只有部署工作流会设置它。
+   *
+   * 下面的 manifest 里 start_url / scope / 图标路径都引用这个值，别各写各的。
+   */
+  const base = isCapacitor ? './' : (process.env.VITE_BASE || '/');
+
   return {
-    // Capacitor 通过 file:// 或 capacitor:// 加载，必须使用相对路径。
-    // 注意这里**必须**走 capacitor 目标：默认 web 目标会连 Service Worker
-    // 和 manifest.webmanifest 一起打进原生包，SW 在 WebView 里会缓存旧资源。
-    base: isCapacitor ? './' : '/',
+    base,
 
     // Tauri 会把 TAURI_ENV_* 注入到编译期，用于区分 dev / build 与平台
     envPrefix: ['VITE_', 'TAURI_ENV_'],
@@ -112,16 +123,20 @@ export default defineConfig(({ mode }) => {
                 'offline.html',
               ],
 
+              // 下面所有路径都以 `base` 开头，不写死 '/'。
+              // 部署到子路径时（GitHub Pages 的 /<repo>/）写死 '/' 会让
+              // start_url 指向域名根、图标全部 404——装到主屏幕后打开是白屏。
+              // 这段只在 web 目标下求值（enablePWA），此时 base 必是 '/xxx/' 形式。
               manifest: {
-                id: '/',
+                id: base,
                 name: 'TimeCalc — 时间计算器',
                 short_name: 'TimeCalc',
                 description:
                   '日期差、日期加减、时间差、时区转换、Unix 时间戳、自然语言时间解析。全部在本地计算，离线可用。',
                 lang: 'zh-CN',
                 dir: 'ltr',
-                start_url: '/',
-                scope: '/',
+                start_url: base,
+                scope: base,
                 display: 'standalone',
                 display_override: ['window-controls-overlay', 'standalone', 'minimal-ui'],
                 orientation: 'any',
@@ -129,15 +144,15 @@ export default defineConfig(({ mode }) => {
                 theme_color: '#2563eb',
                 categories: ['utilities', 'productivity'],
                 icons: [
-                  { src: '/icons/pwa-192x192.png', sizes: '192x192', type: 'image/png' },
-                  { src: '/icons/pwa-512x512.png', sizes: '512x512', type: 'image/png' },
+                  { src: `${base}icons/pwa-192x192.png`, sizes: '192x192', type: 'image/png' },
+                  { src: `${base}icons/pwa-512x512.png`, sizes: '512x512', type: 'image/png' },
                   {
-                    src: '/icons/maskable-icon-512x512.png',
+                    src: `${base}icons/maskable-icon-512x512.png`,
                     sizes: '512x512',
                     type: 'image/png',
                     purpose: 'maskable',
                   },
-                  { src: '/icons/icon.svg', sizes: 'any', type: 'image/svg+xml' },
+                  { src: `${base}icons/icon.svg`, sizes: 'any', type: 'image/svg+xml' },
                 ],
                 // 快捷方式用 hash 路由：与 src/hooks/useNavigation.tsx 的约定一致，
                 // 且 H5 壳里 file:// 协议下也能正确跳转
@@ -145,23 +160,23 @@ export default defineConfig(({ mode }) => {
                   {
                     name: '自然语言计算',
                     short_name: '自然语言',
-                    url: '/#/natural',
+                    url: `${base}#/natural`,
                     description: '直接输入「下周五 15:00 + 2h30m」',
                   },
                   {
                     name: '时区换算',
                     short_name: '时区',
-                    url: '/#/timezone',
+                    url: `${base}#/timezone`,
                   },
                   {
                     name: '日期差',
                     short_name: '日期差',
-                    url: '/#/date-diff',
+                    url: `${base}#/date-diff`,
                   },
                   {
                     name: 'Unix 时间戳',
                     short_name: '时间戳',
-                    url: '/#/unix',
+                    url: `${base}#/unix`,
                   },
                 ],
               },
@@ -169,7 +184,9 @@ export default defineConfig(({ mode }) => {
               workbox: {
                 globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,woff2}'],
                 globIgnores: ['**/icons/source/**'],
-                navigateFallback: '/index.html',
+                // 同样不能让它是写死的 '/'：SW 会拿这个路径当离线兜底，
+                // 部署在子路径时 /index.html 根本不存在，断网就白屏。
+                navigateFallback: `${base}index.html`,
                 navigateFallbackDenylist: [/^\/api\//],
                 cleanupOutdatedCaches: true,
                 clientsClaim: false,

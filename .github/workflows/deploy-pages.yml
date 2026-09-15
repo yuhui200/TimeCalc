@@ -1,0 +1,84 @@
+name: 部署网页版
+
+# 只负责 PWA 静态站点。桌面端和移动端的安装包走 release.yml，两者互不干扰。
+#
+# 首次启用需要在仓库 Settings → Pages → Build and deployment 里，
+# 把 Source 设成 "GitHub Actions"。不设的话 deploy 这步会报
+# "Get Pages site failed"，因为 Pages 站点压根还没创建。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read   # 读仓库
+  pages: write     # 写 Pages 站点
+  id-token: write  # deploy-pages 靠 OIDC 取部署凭据，缺了会 401
+
+# 同一时间只跑一个部署。
+# 这里**不能**开 cancel-in-progress：部署被拦腰打断会留下半新半旧的站点。
+# release.yml 那边取消是无害的（重新跑一次就好），这边不是。
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20   # 与 release.yml 保持一致
+          cache: npm
+
+      - run: npm ci
+
+      # VITE_BASE 必须是 /<仓库名>/ —— Pages 把站点放在子路径下，
+      # 用默认的 '/' 会让 index.html 引的资源全部 404，打开是白屏。
+      # vite.config.ts 里 manifest 的 start_url / scope / 图标路径、快捷方式，
+      # 以及 Service Worker 的离线兜底页，都跟着这个值走，不用另外改
+      # （本地已用 VITE_BASE=/TimeCalc/ 构建并逐项核对过产物）。
+      #
+      # 以后如果绑定了自定义域名，这里要改成 '/'。
+      - name: 构建
+        run: |
+          set -euo pipefail
+          echo "VITE_BASE=$VITE_BASE"
+
+          # ${{ github.event.repository.name }} 理论上总会取到值，但万一取空，
+          # VITE_BASE 会变成 "//"，部署上去是白屏，而且没有任何报错指向这里。
+          # 与其到线上才发现，不如在这里拦住。
+          case "$VITE_BASE" in
+            /[A-Za-z0-9._-]*/) ;;
+            *) echo "VITE_BASE 形状不对：「$VITE_BASE」，预期是 /<仓库名>/"; exit 1 ;;
+          esac
+
+          npm run build
+
+          # 再确认一遍 base 真的进了产物，而不是被某处写死的 '/' 盖过去
+          if ! grep -q "\"start_url\":\"$VITE_BASE\"" dist/manifest.webmanifest; then
+            echo "manifest 的 start_url 不是 $VITE_BASE，实际内容："
+            cat dist/manifest.webmanifest
+            exit 1
+          fi
+        env:
+          VITE_BASE: /${{ github.event.repository.name }}/
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-22.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
