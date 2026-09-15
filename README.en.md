@@ -37,8 +37,10 @@ Every online date calculator I tried wanted my email first, buried the answer un
 ads, or quietly shipped my input to a server. A date is not a secret — but the pattern
 gets exhausting, so I wrote one that does the arithmetic locally.
 
-TimeCalc runs entirely inside your local WebView. **Open DevTools → Network, use the
-app, and count the requests: zero.** Airplane mode is a supported configuration.
+TimeCalc runs entirely inside your local WebView. **Open DevTools → Network, filter to
+Fetch/XHR, and use the app: zero requests.** The page itself is fetched from a static
+host once, of course — after that it never talks to anyone. Airplane mode is a supported
+configuration.
 
 ## What it does
 
