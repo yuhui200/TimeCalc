@@ -182,12 +182,39 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - uses: android-actions/setup-android@v3
-
-      # 显式装版本，不依赖 AGP 的自动下载：自动下载在 license 没接受时会静默失败，
-      # 报错信息离真正原因很远。版本要和 android/variables.gradle 里的一致。
+      # 不需要 android-actions/setup-android：ubuntu-22.04 的 runner 镜像里
+      # Android SDK 是**预装**的（ANDROID_HOME=/usr/local/lib/android/sdk），
+      # 我们要的 platform-tools、platforms;android-35、build-tools;35.0.0 一个不缺，
+      # 而且 ANDROID_HOME / ANDROID_SDK_ROOT 由镜像本身设好，Gradle 直接就能找到。
+      # 2026-09-15 的 v0.2.0 构建就是挂在那个 action 上（同一套配置几小时前还能过），
+      # 属于白白多一个会抖的外部依赖，去掉。
       - name: 安装 Android SDK 组件
-        run: sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+        run: |
+          set -euo pipefail
+          echo "ANDROID_HOME=${ANDROID_HOME:-<未设置>}"
+          if [ ! -d "${ANDROID_HOME:-}" ]; then
+            echo "runner 镜像没有 ANDROID_HOME，说明 SDK 不是预装的，这个假设需要重新确认"
+            exit 1
+          fi
+
+          # cmdline-tools 在不在 PATH 上随镜像版本变，两种都兜住。
+          # 注意 pipefail 下 find 失败会顺着管道传出来，所以末尾要 || true。
+          SDKMANAGER=$(command -v sdkmanager || true)
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -maxdepth 3 \
+              -name sdkmanager -type f 2>/dev/null | sort | tail -1 || true)
+          fi
+          if [ -z "$SDKMANAGER" ]; then
+            echo "找不到 sdkmanager，cmdline-tools 目录内容如下："
+            ls -R "$ANDROID_HOME/cmdline-tools" || true
+            exit 1
+          fi
+          echo "sdkmanager：$SDKMANAGER"
+
+          # 显式装版本，不依赖 AGP 的自动下载：自动下载在 license 没接受时会静默失败，
+          # 报错信息离真正原因很远。版本要和 android/variables.gradle 里的一致。
+          # 镜像里已有这些组件，这一步实际是在做断言，顺带补上镜像没带的版本。
+          "$SDKMANAGER" --install "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - run: npm ci
 
