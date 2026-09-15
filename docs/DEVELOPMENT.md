@@ -1,7 +1,12 @@
-# TimeCalc · 时间计算器
+# TimeCalc 开发文档
 
-日期差、日期加减、时间差、时间加减、时区转换、Unix 时间戳、自然语言输入、倒计时——
-**全部在本地计算，不联网、不上传任何数据**。
+面向要改这个仓库的人：架构约定、构建目标怎么切、原生壳的几个坑、测试与验收。
+
+安装与使用说明见 [README](../README.md)｜[English](../README.en.md)
+
+---
+
+## 架构总览
 
 一套 `src/core` + `src/components` + `src/platform`，同时产出四种形态：
 
@@ -213,7 +218,7 @@ Tauri 不提供交叉编译。
 #### 拿全平台安装包：交给 CI
 
 因为上一条限制，想一次性拿到全部五个平台的安装包，最省事的办法是让
-[.github/workflows/release.yml](.github/workflows/release.yml) 在 GitHub
+[.github/workflows/release.yml](../.github/workflows/release.yml) 在 GitHub
 提供的四种 runner 上分别构建：
 
 ```bash
@@ -262,7 +267,7 @@ SmartScreen 提示，Android 装的是 debug 签名包。要消除这些提示�
 
 - **Android**：JDK 17+（本机用 21，与 Gradle 8.11 是一等组合）+ Android SDK，
   需要 `platform-tools`、`platforms;android-35`、`build-tools;35.0.0`
-  （版本要和 [android/variables.gradle](android/variables.gradle) 里的 `compileSdkVersion` 对齐）。
+  （版本要和 [android/variables.gradle](../android/variables.gradle) 里的 `compileSdkVersion` 对齐）。
   本机 SDK 装在 `D:\Android\Sdk`，由 `android/local.properties` 指向——该文件随
   `android/` 一起在 `.gitignore` 里，CI 上改由 `ANDROID_HOME` 提供。
 - **iOS**：**只能在 macOS 上构建**。Xcode 不发行 Windows 版，这不是工具链没配好，
