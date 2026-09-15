@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  通知栏小图标。capacitor.config.ts 里 LocalNotifications.smallIcon 点名的
+  就是这个名字，插件按 AssetUtil.getResourceID(context, name, "drawable")
+  在 drawable 里查（见 LocalNotification.java:337）。
+
+  **白色 + 透明底**是硬要求：Android 拿这张图的 alpha 通道当遮罩，只保留
+  形状、颜色由系统决定。放一张全彩图进去，状态栏里会变成一个纯白方块。
+  所以这里只画 TimeCalc 标志里的秒表轮廓，不带那个蓝色圆角方块底。
+
+  用矢量（vector drawable）而不是位图：一个文件覆盖所有密度，
+  不用为 mdpi～xxxhdpi 各生成一份。
+
+  几何取自 public/icons/icon.svg（viewBox 0 0 512 512），比例原样保留。
+  唯一改动是描边由 26 加粗到 40——24dp 下 26/512 只有约 1.2dp，
+  状态栏里细得看不清；40 约合 1.9dp，跟系统自带图标的分量相当。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="512"
+    android:viewportHeight="512">
+
+    <!-- 秒表顶部的按钮（圆角矩形，实心） -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M196,60h120a17,17 0 0 1 0,34h-120a17,17 0 0 1 0,-34z" />
+
+    <!-- 表盘（只描边） -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="40"
+        android:pathData="M256,262m-140,0a140,140 0 1,0 280,0a140,140 0 1,0 -280,0" />
+
+    <!-- 指针（只描边，圆头圆角） -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFFFF"
+        android:strokeWidth="40"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M256,158L256,270L334,322" />
+</vector>

@@ -17,8 +17,15 @@ src-tauri/target/
 src-tauri/gen/
 
 # Capacitor
-android/
-ios/
+#
+# 前导斜杠不能省。不带斜杠的 `android/` 匹配的是**任意层级**的同名目录，
+# 会把 src-tauri/icons/android/ 与 src-tauri/icons/ios/（Tauri 生成的移动端
+# 图标源，需要提交）一并忽略掉。后果不是构建失败，而是 CI 上
+# sync-native.mjs 找不到图标源、只打一行「跳过」就继续，打出来的 APK / IPA
+# 里装的还是 Capacitor 的默认图标——v0.2.0 就是这么发出去的。
+# 锚定到仓库根目录，只忽略 cap add 生成的那两个。
+/android/
+/ios/
 .capacitor/
 
 # 编辑器 / 系统
