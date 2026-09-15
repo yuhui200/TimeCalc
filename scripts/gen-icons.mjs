@@ -18,6 +18,9 @@
  * 以及 iOS / Android 全套）：
  *   npx tauri icon public/icons/icon.svg
  * 该命令会直接写入 src-tauri/icons/。
+ *
+ * 移动端启动图（splash）不在这里，见 scripts/gen-splash.mjs——
+ * 两者都由 `npm run icons` 串起来执行。
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync } from 'node:fs';

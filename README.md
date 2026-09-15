@@ -121,7 +121,7 @@ TimeCalc/
 │  ├─ capabilities/default.json 权限清单（与 src/platform/tauri.ts 一一对应）
 │  ├─ tauri.conf.json           窗口、CSP、打包配置
 │  ├─ Cargo.toml
-│  └─ icons/                    `npx tauri icon` 生成
+│  └─ icons/                    `npx tauri icon` 生成；splash/ 另有 gen-splash.mjs
 │
 ├─ public/
 │  ├─ icons/                    PWA 图标（`npm run icons` 生成）
@@ -160,7 +160,7 @@ TimeCalc/
 | `npm run test:watch` | 单元测试 watch 模式 |
 | `npm run test:coverage` | 覆盖率报告（core 有阈值门槛） |
 | `npm run e2e` | Playwright 端到端测试（自动 build + preview） |
-| `npm run icons` | 生成 PWA 图标（→ `public/icons/`） |
+| `npm run icons` | 生成 PWA 图标与移动端启动图（→ `public/icons/`、`src-tauri/icons/splash/`） |
 | `npm run icons:tauri` | 生成桌面 / 移动端图标（→ `src-tauri/icons/`） |
 
 ### Web / PWA
@@ -301,6 +301,11 @@ debug 包用的是 Android 自动生成的 debug 签名，可以直接侧载安�
 >    - **App 图标**——`npx tauri icon` 早就生成了整套原生图标
 >      （`src-tauri/icons/android/` 与 `ios/`，已提交），但 `cap add` 铺的是
 >      Capacitor 模板自带的默认 logo。
+>    - **启动图（splash）**——跟 app 图标是两套独立资源，模板上印的同样是
+>      Capacitor 的 logo。图由 `scripts/gen-splash.mjs` 生成，见下面「启动图」。
+>    - **通知栏小图标**——`capacitor.config.ts` 里 `LocalNotifications.smallIcon`
+>      点名了 `ic_stat_timecalc`，而模板里没有这个资源。通知小图标是拿 alpha
+>      通道当遮罩渲染的，找不到就退回应用图标——状态栏里出来一个纯白方块。
 >    - **`SCHEDULE_EXACT_ALARM` 权限**——倒计时通知要靠它才精确，
 >      理由见下面「Android 上的精确闹钟」。
 >    - **版本号**——模板写死 `versionCode 1` / `versionName "1.0"`，
@@ -314,9 +319,42 @@ debug 包用的是 Android 自动生成的 debug 签名，可以直接侧载安�
 >    这一类的共同点是**漏了不会构建失败**（路径检查那条除外，它是硬失败）：
 >    日志一切正常，只有装到真机、或打开「设置 → 应用」才看得出来。
 >    所以凡是要加原生配置，都往这个脚本里加，别手改。
+>    启动图与通知小图标各自带了安全网：万一 Capacitor 后续版本改了资源布局，
+>    脚本会把「模板里有、我们没覆盖」的文件名逐一列出来，不会默默放过。
 > 2. **不要直接改这两个目录里的文件**——改了下次 `cap add` 就丢。要固化上面
 >    覆盖不到的原生改动（原生插件、自定义 manifest 节点），得先把对应目录从
 >    `.gitignore` 里移出来改成提交。
+>
+> **`.gitignore` 里那两条规则必须带前导斜杠**（`/android/`、`/ios/`）。
+> 不带斜杠时，`android/` 匹配的是**任意层级**的同名目录，会把
+> `src-tauri/icons/android/`、`src-tauri/icons/ios/` 这些**需要提交的图标源**
+> 一起忽略掉。踩过一次：源头没进仓库，CI 上 `sync-native.mjs` 只打一行
+> 「跳过：没有 src-tauri/icons/android」就继续，构建全绿，打出来的 APK / IPA
+> 装的却是 Capacitor 的默认图标——v0.2.0 就这么发出去了，装到手机上才发现。
+> 所以改这两条规则时，务必用 `git ls-tree -r HEAD --name-only | grep icons/`
+> 确认图标源确实在仓库里。
+
+#### 启动图
+
+启动时那一下白屏上的图案，跟 app 图标是**两套独立资源**：app 图标在
+`mipmap-*` / `AppIcon.appiconset`，启动图在 `drawable*/splash.png` /
+`Splash.imageset`。Capacitor 模板两边印的都是它自己的 logo——所以只换图标
+是不够的，启动瞬间仍会闪一下 Capacitor 的蓝叉。
+
+`scripts/gen-splash.mjs` 从 `public/icons/icon.svg` 重新生成这两套共 14 张
+（Android 11 张 + iOS 3 张），产物提交进 `src-tauri/icons/splash/`，
+再由 `sync-native.mjs` 拷进生成目录。
+
+几个决定：
+
+- **画布与 logo 尺寸原样沿用模板**（见脚本里的 `ANDROID_SPLASHES`），
+  只换内容不换比例，启动页的视觉分量跟以前一致。那些数字是逐张量出来的，
+  **没有可推导的公式**——Capacitor 直接打包了静态图，各密度的 logo 边长
+  并不成比例（mdpi 64、hdpi/xhdpi 96、xxhdpi/xxxhdpi 128）。
+- **底色直接从 `capacitor.config.ts` 读**，不在脚本里写死。它必须等于
+  `SplashScreen.backgroundColor`，否则启动图交接给 WebView 的瞬间会闪色。
+- **生成与同步分成两步**，因为生成要 sharp 而同步跑在 CI 上。产物进仓库，
+  CI 侧就只做文件拷贝，不必装图像库。
 
 #### Android 上的精确闹钟
 

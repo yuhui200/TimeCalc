@@ -5,18 +5,35 @@
  * 为什么需要这一步：
  *   android/ 与 ios/ 都在 .gitignore 里，属于生成产物，每次 `cap add`
  *   都从头铺 Capacitor 模板。模板给的是 Capacitor 自己的默认值，
- *   而我们需要的几处定制每次都会被冲掉。目前有两处：
+ *   而我们需要的几处定制每次都会被冲掉。**这些错误有个共同点：构建日志
+ *   全绿，只有装到真机上才看得见。** 目前有六处：
  *
  *   1. **App 图标**——模板铺的是 Capacitor 的 logo。不覆盖的话构建日志
  *      一切正常，只有装到手机上才会发现图标不对。
  *      （图标源：`npx tauri icon` 生成的 src-tauri/icons/，已提交进仓库）
  *
- *   2. **精确闹钟权限**——@capacitor/local-notifications 的清单里
+ *   2. **启动图**——同样印着 Capacitor 的 logo，启动时先闪一下它才进界面。
+ *      图源见 scripts/gen-splash.mjs（那一步需要 sharp，产物已提交，
+ *      所以这里只做拷贝、CI 不必装 sharp）。
+ *
+ *   3. **通知栏小图标**——capacitor.config.ts 里 LocalNotifications.smallIcon
+ *      点名了 ic_stat_timecalc，而模板里没有这个资源。找不到时插件会退回
+ *      应用图标，偏偏通知小图标是拿 alpha 通道当遮罩渲染的：全彩图标进去，
+ *      状态栏里出来一个纯白方块。
+ *
+ *   4. **精确闹钟权限**——@capacitor/local-notifications 的清单里
  *      没有 SCHEDULE_EXACT_ALARM。缺了它，Android 12+ 上
  *      `canScheduleExactAlarms()` 返回 false，插件会打一条 warning 后
  *      退回 `setAndAllowWhileIdle`：**通知照样响，但时间不精确**，
  *      Doze 模式下可能晚几分钟。倒计时的全部意义就是「到点响」，
  *      所以这个权限要显式声明。
+ *
+ *   5. **版本号**——模板写死 versionCode 1 / versionName "1.0"，
+ *      跟 package.json 的版本对不上。
+ *
+ *   6. **非 ASCII 路径**——AGP 默认拒绝在含中文的路径下构建，
+ *      而本机就是 D:\系统\TimeCalc。这一条是真的会构建失败，
+ *      与上面几条"静默出错"不同。
  *
  * 每次 `cap add` 之后都要跑，npm scripts（cap:add:*）与 CI 都已接上。
  * 幂等：目标不存在就跳过，已经补过的不重复写。
@@ -55,8 +72,16 @@ const ANDROID_ICON_NAMES = ['ic_launcher.png', 'ic_launcher_round.png', 'ic_laun
  * 注意 Capacitor 还带一个 `mipmap-anydpi-v26/ic_launcher_round.xml`，
  * Tauri 不生成对应文件，因此不在覆盖范围内。它引用的仍是上面这两个资源，
  * 所以前景与背景照样跟着换。
+ *
+ * 最后一个不同源：`drawable/ic_stat_timecalc.xml` 不是 Tauri 生成的，
+ * 是手写的矢量图（见该文件自身的注释），放在 src-tauri/icons/android/ 下
+ * 只是为了跟其他移动端资源待在一起。
  */
-const ANDROID_EXTRA_FILES = ['mipmap-anydpi-v26/ic_launcher.xml', 'values/ic_launcher_background.xml'];
+const ANDROID_EXTRA_FILES = [
+  'mipmap-anydpi-v26/ic_launcher.xml',
+  'values/ic_launcher_background.xml',
+  'drawable/ic_stat_timecalc.xml',
+];
 
 const ANDROID_RES = join(root, 'android', 'app', 'src', 'main', 'res');
 const ANDROID_MANIFEST = join(root, 'android', 'app', 'src', 'main', 'AndroidManifest.xml');
@@ -205,6 +230,41 @@ function syncAndroidManifest() {
   }
 }
 
+/** `res/` 下所有含 splash.png 的目录名（模板可能带 drawable/ 与 drawable-<限定符>/ 若干）。 */
+function splashDirs(res) {
+  return readdirSync(res).filter((d) => existsSync(join(res, d, 'splash.png')));
+}
+
+/**
+ * 把 TimeCalc 的启动图铺进 res/ 的各个 drawable 目录。
+ *
+ * 逐目录按**模板现有的目录名**匹配，而不是照搬 gen-splash.mjs 的清单：
+ * 两边一旦不一致，下面的安全网会报出来。硬造目录没有意义——
+ * 造出来的路径如果没人引用，就只是多几个死文件。
+ */
+function syncAndroidSplash() {
+  const src = join(root, 'src-tauri', 'icons', 'splash', 'android');
+  if (!existsSync(src)) return console.log('· 跳过 Android 启动图：没有 src-tauri/icons/splash/android');
+  if (!existsSync(ANDROID_RES)) return console.log('· 跳过 Android 启动图：没有 android/（先跑 cap add android）');
+
+  const covered = new Set();
+  for (const dir of readdirSync(src)) {
+    const to = join(ANDROID_RES, dir, 'splash.png');
+    if (!existsSync(join(src, dir, 'splash.png')) || !existsSync(to)) continue;
+    copyFileSync(join(src, dir, 'splash.png'), to);
+    covered.add(dir);
+  }
+
+  console.log(`✓ Android 启动图：覆盖 ${covered.size} 张`);
+  // 安全网：模板里有、我们没生成的启动图 → Capacitor 换了资源布局，
+  // 此时那几张仍是 Capacitor 的 logo，必须让人看见而不是默默放过。
+  const missed = splashDirs(ANDROID_RES).filter((d) => !covered.has(d));
+  if (missed.length > 0) {
+    console.log(`! Android 启动图：模板里还有未覆盖的 —— ${missed.join('、')}`);
+    console.log('  Capacitor 大概改了资源布局，请同步 scripts/gen-splash.mjs 的 ANDROID_SPLASHES');
+  }
+}
+
 /* -------------------------------------------------------------------- iOS */
 
 /**
@@ -226,8 +286,38 @@ function syncIos() {
   console.log('✓ iOS：覆盖 AppIcon-512@2x.png（1024x1024）');
 }
 
+/**
+ * iOS 的启动图放在 Splash.imageset/ 下，由同目录的 Contents.json 按
+ * 1x/2x/3x 引用三个文件（模板里这三份逐字节相同）。这里按**现有文件名**
+ * 逐个覆盖、不写死名字——名字对不上就说明模板改了，安全网会报出来。
+ */
+function syncIosSplash() {
+  const src = join(root, 'src-tauri', 'icons', 'splash', 'ios');
+  const dstDir = join(root, 'ios', 'App', 'App', 'Assets.xcassets', 'Splash.imageset');
+  if (!existsSync(src)) return console.log('· 跳过 iOS 启动图：没有 src-tauri/icons/splash/ios');
+  if (!existsSync(dstDir)) return console.log('· 跳过 iOS 启动图：没有 ios/（先跑 cap add ios）');
+
+  const present = readdirSync(dstDir).filter((n) => n.endsWith('.png'));
+  let copied = 0;
+  for (const name of present) {
+    const from = join(src, name);
+    if (!existsSync(from)) continue;
+    copyFileSync(from, join(dstDir, name));
+    copied++;
+  }
+
+  console.log(`✓ iOS 启动图：覆盖 ${copied} 张`);
+  const missed = present.filter((n) => !existsSync(join(src, n)));
+  if (missed.length > 0) {
+    console.log(`! iOS 启动图：imageset 里还有未覆盖的 —— ${missed.join('、')}`);
+    console.log('  Capacitor 大概改了资源布局，请同步 scripts/gen-splash.mjs 的 IOS_SPLASHES');
+  }
+}
+
 syncAndroidIcons();
+syncAndroidSplash();
 syncAndroidManifest();
 syncAndroidVersion();
 syncAndroidGradleProperties();
 syncIos();
+syncIosSplash();

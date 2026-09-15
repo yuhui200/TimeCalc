@@ -13,7 +13,7 @@
     "build": "npm run typecheck && vite build",
     "preview": "vite preview --port 4173 --strictPort",
     "typecheck": "tsc --noEmit",
-    "icons": "node scripts/gen-icons.mjs",
+    "icons": "node scripts/gen-icons.mjs && node scripts/gen-splash.mjs",
     "icons:tauri": "tauri icon public/icons/icon.svg",
     "test": "vitest run",
     "test:watch": "vitest",

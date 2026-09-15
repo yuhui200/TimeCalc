@@ -197,7 +197,8 @@ jobs:
 
       # android/ 在 .gitignore 里，每次由模板重新生成，保证可复现。
       # 用 cap:add:android 而不是裸的 cap add：它后面接了 sync-native.mjs，
-      # 负责补回模板不会带的图标与精确闹钟权限（见脚本头部说明）。
+      # 负责补回模板不会带的 app 图标、启动图、通知小图标与精确闹钟权限
+      # （见脚本头部说明）。
       # 漏了不会构建失败，只会装到真机才发现——所以必须走这个入口。
       - run: npm run cap:add:android
 
@@ -228,7 +229,7 @@ jobs:
       - run: npm run build:capacitor
 
       # macOS runner 自带 CocoaPods，cap add 会自动跑 pod install。
-      # 同理走 cap:add:ios，它会顺带把 AppIcon 换成 TimeCalc 的，
+      # 同理走 cap:add:ios，它会顺带把 AppIcon 与启动图换成 TimeCalc 的，
       # 并补上 SCHEDULE_EXACT_ALARM 之类的原生定制（iOS 侧会自动跳过）。
       - run: npm run cap:add:ios
       - run: npx cap sync ios
